@@ -121,7 +121,7 @@ size_t lzallocator_kib_count(size_t kb_size)
 {
     size_t modulo = kb_size % 2;
     size_t padding = 2 - modulo;
-    size_t size = padding == 0 ? kb_size : kb_size + padding;
+    size_t size = modulo == 0 ? kb_size : kb_size + padding;
 
     return size * 1024 / LZALLOCATOR_BLOCK_SIZE;
 }
@@ -130,7 +130,7 @@ size_t lzallocator_mib_count(size_t mb_size)
 {
     size_t modulo = mb_size % 2;
     size_t padding = 2 - modulo;
-    size_t size = padding == 0 ? mb_size : mb_size + padding;
+    size_t size = modulo == 0 ? mb_size : mb_size + padding;
 
     return size * (1024 * 1024) / LZALLOCATOR_BLOCK_SIZE;
 }

@@ -24,6 +24,84 @@ typedef struct _lzallocator_
 #define LZALLOCATOR_HEADER_SIZE (sizeof(struct _lzallocator_header_))
 #define LZALLOCATOR_CALC_BLOCK_SIZE(size) (size - LZALLOCATOR_HEADER_SIZE)
 
+// interface
+struct _lzallocator_ *lzallocator_create(size_t bytes);
+void lzallocator_destroy(struct _lzallocator_ *allocator);
+
+size_t lzallocator_kib(size_t kb_size);
+size_t lzallocator_mib(size_t mb_size);
+int lzallocator_is_power_of_two(size_t value);
+size_t lzallocator_available_space(struct _lzallocator_ *allocator);
+int lzallocator_validate_ptr(void *ptr, struct _lzallocator_ *allocator);
+
+struct _lzallocator_header_ *lzallocator_get_header(void *ptr);
+void *lzallocator_alloc_from_header(struct _lzallocator_header_ *header);
+
+void lzallocator_join_blocks(struct _lzallocator_ *allocator);
+struct _lzallocator_header_ *lzallocator_split_block(struct _lzallocator_header_ *header);
+
+struct _lzallocator_header_ *lzallocator_best_fit(size_t bytes, struct _lzallocator_ *allocator);
+struct _lzallocator_header_ *lzallocator_find_by_split(size_t bytes, struct _lzallocator_header_ *header);
+
+void *lzallocator_alloc(size_t bytes, struct _lzallocator_ *allocator, struct _lzallocator_header_ **header_out);
+void *lzallocator_calloc(size_t bytes, struct _lzallocator_ *allocator, struct _lzallocator_header_ **header_out);
+void lzallocator_dealloc(void *ptr, struct _lzallocator_ *allocator);
+void *lzallocator_realloc(size_t bytes, void *ptr, struct _lzallocator_ *allocator, struct _lzallocator_header_ **header_out);
+
+// implementation
+struct _lzallocator_ *lzallocator_create(size_t bytes)
+{
+    assert(lzallocator_is_power_of_two(bytes) && "Illegal bytes value. Not power of two");
+
+    void *area = malloc(bytes);
+    struct _lzallocator_ *allocator = (struct _lzallocator_ *)malloc(sizeof(struct _lzallocator_));
+
+    if (!area || !allocator)
+    {
+        free(area);
+        free(allocator);
+
+        return NULL;
+    }
+
+    allocator->bytes = bytes;
+    allocator->blocks = (struct _lzallocator_header_ *)area;
+
+    allocator->blocks->free = 1;
+    allocator->blocks->size = bytes;
+    allocator->blocks->prev = NULL;
+    allocator->blocks->next = NULL;
+
+    return allocator;
+}
+
+void lzallocator_destroy(struct _lzallocator_ *allocator)
+{
+    if (!allocator)
+        return;
+
+    free(allocator->blocks);
+    free(allocator);
+}
+
+size_t lzallocator_kib(size_t kb_size)
+{
+    size_t modulo = kb_size % 2;
+    size_t padding = 2 - modulo;
+    size_t size = modulo == 0 ? kb_size : kb_size + padding;
+
+    return size * 1024;
+}
+
+size_t lzallocator_mib(size_t mb_size)
+{
+    size_t modulo = mb_size % 2;
+    size_t padding = 2 - modulo;
+    size_t size = modulo == 0 ? mb_size : mb_size + padding;
+
+    return size * (1024 * 1024);
+}
+
 int lzallocator_is_power_of_two(size_t value)
 {
     return (value > 0) & ((value & (value - 1)) == 0);
@@ -45,6 +123,28 @@ size_t lzallocator_available_space(struct _lzallocator_ *allocator)
     }
 
     return space;
+}
+
+int lzallocator_validate_ptr(void *ptr, struct _lzallocator_ *allocator)
+{
+    unsigned char *block_ptr = (unsigned char *)ptr;
+
+    return (block_ptr < (unsigned char *)allocator->blocks) || (block_ptr > (((unsigned char *)allocator->blocks) + allocator->bytes));
+}
+
+struct _lzallocator_header_ *lzallocator_get_header(void *ptr)
+{
+    return (struct _lzallocator_header_ *)(((unsigned char *)ptr) - LZALLOCATOR_HEADER_SIZE);
+}
+
+void *lzallocator_alloc_from_header(struct _lzallocator_header_ *header)
+{
+    assert(header && "header is NULL");
+    assert(header->free && "header is not free");
+
+    header->free = 0;
+
+    return (void *)(((unsigned char *)header) + LZALLOCATOR_HEADER_SIZE);
 }
 
 void lzallocator_join_blocks(struct _lzallocator_ *allocator)
@@ -98,65 +198,6 @@ struct _lzallocator_header_ *lzallocator_split_block(struct _lzallocator_header_
     header->next = next;
 
     return next;
-}
-
-void *lzallocator_alloc_from_header(struct _lzallocator_header_ *header)
-{
-    assert(header && "header is NULL");
-    assert(header->free && "header is not free");
-
-    header->free = 0;
-
-    return (void *)(((unsigned char *)header) + LZALLOCATOR_HEADER_SIZE);
-}
-
-struct _lzallocator_header_ *lzallocator_get_header(void *ptr)
-{
-    return (struct _lzallocator_header_ *)(((unsigned char *)ptr) - LZALLOCATOR_HEADER_SIZE);
-}
-
-size_t lzallocator_kib(size_t kb_size)
-{
-    size_t modulo = kb_size % 2;
-    size_t padding = 2 - modulo;
-    size_t size = modulo == 0 ? kb_size : kb_size + padding;
-
-    return size * 1024;
-}
-
-size_t lzallocator_mib(size_t mb_size)
-{
-    size_t modulo = mb_size % 2;
-    size_t padding = 2 - modulo;
-    size_t size = modulo == 0 ? mb_size : mb_size + padding;
-
-    return size * (1024 * 1024);
-}
-
-struct _lzallocator_ *lzallocator_create(size_t bytes)
-{
-    assert(lzallocator_is_power_of_two(bytes) && "Illegal bytes value. Not power of two");
-
-    void *area = malloc(bytes);
-    struct _lzallocator_ *allocator = (struct _lzallocator_ *)malloc(sizeof(struct _lzallocator_));
-
-    if (!area || !allocator)
-    {
-        free(area);
-        free(allocator);
-
-        return NULL;
-    }
-
-    allocator->bytes = bytes;
-    allocator->blocks = (struct _lzallocator_header_ *)area;
-
-    allocator->blocks->free = 1;
-    allocator->blocks->size = bytes;
-    allocator->blocks->prev = NULL;
-    allocator->blocks->next = NULL;
-
-    return allocator;
 }
 
 struct _lzallocator_header_ *lzallocator_best_fit(size_t bytes, struct _lzallocator_ *allocator)
@@ -265,25 +306,6 @@ void *lzallocator_calloc(size_t bytes, struct _lzallocator_ *allocator, struct _
     return ptr;
 }
 
-int lzallocator_validate_ptr(void *ptr, struct _lzallocator_ *allocator)
-{
-    unsigned char *block_ptr = (unsigned char *)ptr;
-
-    return (block_ptr < (unsigned char *)allocator->blocks) || (block_ptr > (((unsigned char *)allocator->blocks) + allocator->bytes));
-}
-
-void lzallocator_dealloc(void *ptr, struct _lzallocator_ *allocator)
-{
-    if (!ptr || lzallocator_validate_ptr(ptr, allocator))
-        return;
-
-    struct _lzallocator_header_ *header = lzallocator_get_header(ptr);
-
-    header->free = 1;
-
-    lzallocator_join_blocks(allocator);
-}
-
 void *lzallocator_realloc(size_t bytes, void *ptr, struct _lzallocator_ *allocator, struct _lzallocator_header_ **header_out)
 {
     if (!ptr)
@@ -309,13 +331,16 @@ void *lzallocator_realloc(size_t bytes, void *ptr, struct _lzallocator_ *allocat
     return new_ptr;
 }
 
-void lzallocator_destroy(struct _lzallocator_ *allocator)
+void lzallocator_dealloc(void *ptr, struct _lzallocator_ *allocator)
 {
-    if (!allocator)
+    if (!ptr || lzallocator_validate_ptr(ptr, allocator))
         return;
 
-    free(allocator->blocks);
-    free(allocator);
+    struct _lzallocator_header_ *header = lzallocator_get_header(ptr);
+
+    header->free = 1;
+
+    lzallocator_join_blocks(allocator);
 }
 
 #endif

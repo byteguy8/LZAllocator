@@ -169,28 +169,20 @@ struct _lzallocator_header_ *lzallocator_best_fit(size_t bytes, struct _lzalloca
     {
         struct _lzallocator_header_ *next = current->next;
 
-        // A block can only be choosen if is free and its size is large enough to
-        // contains the requested size. But we need to try the best fit. A very large
-        // block would be a waste of (maybe) space and execution time, because it will
-        // need to be splitted later. So we check to find the at lest large enough block
-
-        size_t current_size = LZALLOCATOR_CALC_BLOCK_SIZE(current->size);
-
-        if (current_size == bytes)
-            break;
-
-        if (current->free && (current_size > bytes && (current_size < last_size || last_size == 0)))
+        if (current->free)
         {
-            header = current;
-            last_size = current_size;
-            size_t fit = last_size / bytes;
+            size_t current_size = LZALLOCATOR_CALC_BLOCK_SIZE(current->size);
 
-            // if the found block is large enough to
-            // contain at least one or two times the
-            // requested size, we break. We found the best correct block
+            if (bytes == current_size)
+                return current;
 
-            if (fit >= 1 && fit <= 2)
-                break;
+            if (current_size > bytes && (current_size < last_size || last_size == 0))
+            {
+                header = current;
+                last_size = current_size;
+
+                continue;
+            }
         }
 
         current = next;
@@ -263,7 +255,7 @@ void *lzallocator_alloc(size_t bytes, struct _lzallocator_ *allocator, struct _l
     return ptr;
 }
 
-void *lzallocator_malloc(size_t bytes, struct _lzallocator_ *allocator, struct _lzallocator_header_ **header_out)
+void *lzallocator_calloc(size_t bytes, struct _lzallocator_ *allocator, struct _lzallocator_header_ **header_out)
 {
     void *ptr = lzallocator_alloc(bytes, allocator, header_out);
 
